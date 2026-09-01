@@ -14,8 +14,8 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       AUTORUN_ENABLED: false
-      PUSHER_HOST: "${PUSHER_HOST}"
-      PUSHER_PORT: "${PUSHER_PORT}"
+      PUSHER_HOST: "${PUSHER_HOST:-}"
+      PUSHER_PORT: "${PUSHER_PORT:-}"
       PUSHER_SCHEME: "${PUSHER_SCHEME:-http}"
       PUSHER_APP_ID: "${PUSHER_APP_ID:-coolify}"
       PUSHER_APP_KEY: "${PUSHER_APP_KEY:-coolify}"

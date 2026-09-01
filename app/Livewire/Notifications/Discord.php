@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Notifications;
 
+use App\Livewire\Notifications\Concerns\TogglesNotificationEvents;
 use App\Models\DiscordNotificationSettings;
 use App\Models\Team;
 use App\Notifications\Test;
@@ -12,7 +13,7 @@ use Livewire\Component;
 
 class Discord extends Component
 {
-    use AuthorizesRequests;
+    use AuthorizesRequests, TogglesNotificationEvents;
 
     public Team $team;
 
@@ -32,6 +33,9 @@ class Discord extends Component
 
     #[Validate(['boolean'])]
     public bool $statusChangeDiscordNotifications = false;
+
+    #[Validate(['boolean'])]
+    public bool $restartLimitReachedDiscordNotifications = true;
 
     #[Validate(['boolean'])]
     public bool $backupSuccessDiscordNotifications = false;
@@ -92,6 +96,7 @@ class Discord extends Component
             $this->settings->deployment_success_discord_notifications = $this->deploymentSuccessDiscordNotifications;
             $this->settings->deployment_failure_discord_notifications = $this->deploymentFailureDiscordNotifications;
             $this->settings->status_change_discord_notifications = $this->statusChangeDiscordNotifications;
+            $this->settings->restart_limit_reached_discord_notifications = $this->restartLimitReachedDiscordNotifications;
             $this->settings->backup_success_discord_notifications = $this->backupSuccessDiscordNotifications;
             $this->settings->backup_failure_discord_notifications = $this->backupFailureDiscordNotifications;
             $this->settings->scheduled_task_success_discord_notifications = $this->scheduledTaskSuccessDiscordNotifications;
@@ -117,6 +122,7 @@ class Discord extends Component
             $this->deploymentSuccessDiscordNotifications = $this->settings->deployment_success_discord_notifications;
             $this->deploymentFailureDiscordNotifications = $this->settings->deployment_failure_discord_notifications;
             $this->statusChangeDiscordNotifications = $this->settings->status_change_discord_notifications;
+            $this->restartLimitReachedDiscordNotifications = $this->settings->restart_limit_reached_discord_notifications;
             $this->backupSuccessDiscordNotifications = $this->settings->backup_success_discord_notifications;
             $this->backupFailureDiscordNotifications = $this->settings->backup_failure_discord_notifications;
             $this->scheduledTaskSuccessDiscordNotifications = $this->settings->scheduled_task_success_discord_notifications;

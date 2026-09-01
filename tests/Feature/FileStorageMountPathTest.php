@@ -87,7 +87,7 @@ test('livewire file storage rejects parent segments and does not create a local 
 
 test('file mount modal shows the calculated host file path above the destination input', function () {
     Livewire::test(Storage::class, ['resource' => $this->application])
-        ->assertSeeText('This file will be created on the host, then mounted into the container.')
+        ->assertSeeText('Create a managed file on the host and mount it inside the container.')
         ->assertSeeText('Host file path')
         ->assertSeeText($this->application->workdir().'/')
         ->set('file_storage_path', '/etc/nginx/nginx.conf')
@@ -135,8 +135,42 @@ test('livewire volume storage refreshes the storage list and configuration warni
         ->set('mount_path', '/app/data')
         ->call('submitPersistentVolume')
         ->assertDispatched('success')
-        ->assertDispatched('refreshStorages')
-        ->assertDispatched('configurationChanged');
+        ->assertNotDispatched('refreshStorages')
+        ->assertNotDispatched('refreshVolumeList')
+        ->assertDispatched('configurationChanged')
+        ->assertSet('activeTab', 'volumes')
+        ->assertSet('volumeCount', 1)
+        ->assertSee($this->application->uuid.'-data');
+});
+
+test('adding another volume refreshes only the mounted volume list', function () {
+    LocalPersistentVolume::create([
+        'name' => $this->application->uuid.'-first',
+        'mount_path' => '/app/first',
+        'resource_id' => $this->application->id,
+        'resource_type' => $this->application->getMorphClass(),
+    ]);
+
+    Livewire::test(Storage::class, ['resource' => $this->application])
+        ->set('name', 'second')
+        ->set('mount_path', '/app/second')
+        ->call('submitPersistentVolume')
+        ->assertDispatched('refreshVolumeList')
+        ->assertNotDispatched('refreshStorages');
+});
+
+test('deleting a volume asks only the parent storage component to refresh its counts', function () {
+    $volume = LocalPersistentVolume::create([
+        'name' => $this->application->uuid.'-data',
+        'mount_path' => '/app/data',
+        'resource_id' => $this->application->id,
+        'resource_type' => $this->application->getMorphClass(),
+    ]);
+
+    Livewire::test(All::class, ['resource' => $this->application])
+        ->call('delete', $volume->id, 'password')
+        ->assertDispatched('storageCountsChanged')
+        ->assertNotDispatched('refreshStorages');
 });
 
 test('volume storage list shows volumes added after it was mounted', function () {
@@ -159,8 +193,20 @@ test('volume storage list shows volumes added after it was mounted', function ()
 
     $storageList
         ->assertDontSee($secondVolume->name)
-        ->dispatch('refreshStorages')
+        ->call('refreshList')
         ->assertSee($secondVolume->name);
+});
+
+test('adding a volume switches to the volumes tab immediately', function () {
+    Livewire::test(Storage::class, ['resource' => $this->application])
+        ->assertSet('activeTab', 'volumes')
+        ->set('activeTab', 'directories')
+        ->set('name', 'cache')
+        ->set('mount_path', '/cache')
+        ->call('submitPersistentVolume')
+        ->assertSet('activeTab', 'volumes')
+        ->assertSee($this->application->uuid.'-cache')
+        ->assertDontSee('No directory mounts configured');
 });
 
 test('deleting a file mount refreshes the configuration warning', function () {
@@ -176,7 +222,9 @@ test('deleting a file mount refreshes the configuration warning', function () {
 
     Livewire::test(FileStorage::class, ['fileStorage' => $file])
         ->call('delete', 'password')
-        ->assertDispatched('configurationChanged');
+        ->assertDispatched('configurationChanged')
+        ->assertDispatched('storageCountsChanged')
+        ->assertNotDispatched('refreshStorages');
 
     expect($file->fresh())->toBeNull();
 });

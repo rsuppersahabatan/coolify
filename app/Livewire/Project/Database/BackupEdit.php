@@ -212,14 +212,14 @@ class BackupEdit extends Component
             if ($this->backup->database->getMorphClass() === ServiceDatabase::class) {
                 $serviceDatabase = $this->backup->database;
 
-                return redirect()->route('project.service.database.backups', [
+                return redirectRoute($this, 'project.service.database.backups', [
                     'project_uuid' => $this->parameters['project_uuid'],
                     'environment_uuid' => $this->parameters['environment_uuid'],
                     'service_uuid' => $serviceDatabase->service->uuid,
                     'stack_service_uuid' => $serviceDatabase->uuid,
                 ]);
             } else {
-                return redirect()->route('project.database.backup.index', [
+                return redirectRoute($this, 'project.database.backup.index', [
                     'project_uuid' => $this->parameters['project_uuid'],
                     'environment_uuid' => $this->parameters['environment_uuid'],
                     'database_uuid' => $this->parameters['database_uuid'],
@@ -252,9 +252,17 @@ class BackupEdit extends Component
                 ]);
             }
 
+            // Instance databases (e.g. coolify-db) have no project/environment.
+            // Stay on the current page (settings.backup) instead of redirecting.
+            $project = $database->project();
+            $environment = $database->environment;
+            if (! $project || ! $environment) {
+                return null;
+            }
+
             return redirect()->route('project.database.backup.executions', [
-                'project_uuid' => $database->project()->uuid,
-                'environment_uuid' => $database->environment->uuid,
+                'project_uuid' => $project->uuid,
+                'environment_uuid' => $environment->uuid,
                 'database_uuid' => $database->uuid,
                 'backup_uuid' => $this->backup->uuid,
             ]);

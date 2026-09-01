@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Notifications;
 
+use App\Livewire\Notifications\Concerns\TogglesNotificationEvents;
 use App\Models\SlackNotificationSettings;
 use App\Models\Team;
 use App\Notifications\Test;
@@ -13,7 +14,7 @@ use Livewire\Component;
 
 class Slack extends Component
 {
-    use AuthorizesRequests;
+    use AuthorizesRequests, TogglesNotificationEvents;
 
     protected $listeners = ['refresh' => '$refresh'];
 
@@ -37,6 +38,9 @@ class Slack extends Component
 
     #[Validate(['boolean'])]
     public bool $statusChangeSlackNotifications = false;
+
+    #[Validate(['boolean'])]
+    public bool $restartLimitReachedSlackNotifications = true;
 
     #[Validate(['boolean'])]
     public bool $backupSuccessSlackNotifications = false;
@@ -94,6 +98,7 @@ class Slack extends Component
             $this->settings->deployment_success_slack_notifications = $this->deploymentSuccessSlackNotifications;
             $this->settings->deployment_failure_slack_notifications = $this->deploymentFailureSlackNotifications;
             $this->settings->status_change_slack_notifications = $this->statusChangeSlackNotifications;
+            $this->settings->restart_limit_reached_slack_notifications = $this->restartLimitReachedSlackNotifications;
             $this->settings->backup_success_slack_notifications = $this->backupSuccessSlackNotifications;
             $this->settings->backup_failure_slack_notifications = $this->backupFailureSlackNotifications;
             $this->settings->scheduled_task_success_slack_notifications = $this->scheduledTaskSuccessSlackNotifications;
@@ -117,6 +122,7 @@ class Slack extends Component
             $this->deploymentSuccessSlackNotifications = $this->settings->deployment_success_slack_notifications;
             $this->deploymentFailureSlackNotifications = $this->settings->deployment_failure_slack_notifications;
             $this->statusChangeSlackNotifications = $this->settings->status_change_slack_notifications;
+            $this->restartLimitReachedSlackNotifications = $this->settings->restart_limit_reached_slack_notifications;
             $this->backupSuccessSlackNotifications = $this->settings->backup_success_slack_notifications;
             $this->backupFailureSlackNotifications = $this->settings->backup_failure_slack_notifications;
             $this->scheduledTaskSuccessSlackNotifications = $this->settings->scheduled_task_success_slack_notifications;

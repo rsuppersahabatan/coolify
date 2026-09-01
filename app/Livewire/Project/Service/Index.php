@@ -59,8 +59,6 @@ class Index extends Component
 
     public bool $isLogDrainEnabled = false;
 
-    public bool $isImportSupported = false;
-
     // Application-specific properties
     public $docker_cleanup = true;
 
@@ -153,10 +151,6 @@ class Index extends Component
         $this->refreshFileStorages();
         $this->syncDatabaseData(false);
 
-        // Check if import is supported for this database type
-        $dbType = $this->serviceDatabase->databaseType();
-        $supportedTypes = ['mysql', 'mariadb', 'postgres', 'mongo'];
-        $this->isImportSupported = collect($supportedTypes)->contains(fn ($type) => str_contains($dbType, $type));
     }
 
     private function syncDatabaseData(bool $toModel = false): void
@@ -280,6 +274,18 @@ class Index extends Component
         } catch (\Throwable $e) {
             return handleError($e, $this);
         }
+    }
+
+    public function enablePublicAccess(): void
+    {
+        $this->isPublic = true;
+        $this->instantSave();
+    }
+
+    public function disablePublicAccess(): void
+    {
+        $this->isPublic = false;
+        $this->instantSave();
     }
 
     public function instantSave()
@@ -416,7 +422,7 @@ class Index extends Component
             $this->serviceApplication->delete();
             $this->dispatch('success', 'Application deleted.');
 
-            return redirect()->route('project.service.configuration', $this->parameters);
+            return redirectRoute($this, 'project.service.configuration', $this->parameters);
         } catch (\Throwable $e) {
             return handleError($e, $this);
         }
@@ -450,7 +456,7 @@ class Index extends Component
                 $serviceApplication->delete();
             });
 
-            return redirect()->route('project.service.configuration', $redirectParams);
+            return redirectRoute($this, 'project.service.configuration', $redirectParams);
         } catch (\Throwable $e) {
             return handleError($e, $this);
         }

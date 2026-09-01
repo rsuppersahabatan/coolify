@@ -9,6 +9,10 @@ use Spatie\Url\Url;
 
 class InstanceSettings extends Model
 {
+    protected $attributes = [
+        'is_dashboard_force_https_enabled' => true,
+    ];
+
     protected $fillable = [
         'public_ipv4',
         'public_ipv6',
@@ -29,10 +33,12 @@ class InstanceSettings extends Model
         'smtp_username',
         'smtp_password',
         'smtp_timeout',
+        'smtp_ehlo_domain',
         'resend_enabled',
         'resend_api_key',
         'is_dns_validation_enabled',
         'custom_dns_servers',
+        'domain_connect_private_key',
         'instance_name',
         'is_api_enabled',
         'allowed_ips',
@@ -48,6 +54,9 @@ class InstanceSettings extends Model
         'is_mcp_server_enabled',
         'webhook_allowed_internal_hosts',
         'webhook_allow_localhost',
+        'avatar_storage_type',
+        'avatar_s3_storage_id',
+        'is_dashboard_force_https_enabled',
     ];
 
     protected $hidden = [
@@ -58,6 +67,7 @@ class InstanceSettings extends Model
         'smtp_username',
         'smtp_password',
         'resend_api_key',
+        'domain_connect_private_key',
         'sentinel_token',
     ];
 
@@ -74,6 +84,7 @@ class InstanceSettings extends Model
 
         'resend_enabled' => 'boolean',
         'resend_api_key' => 'encrypted',
+        'domain_connect_private_key' => 'encrypted',
 
         'allowed_ip_ranges' => 'array',
         'is_auto_update_enabled' => 'boolean',
@@ -84,6 +95,7 @@ class InstanceSettings extends Model
         'is_mcp_server_enabled' => 'boolean',
         'webhook_allowed_internal_hosts' => 'array',
         'webhook_allow_localhost' => 'boolean',
+        'is_dashboard_force_https_enabled' => 'boolean',
     ];
 
     protected static function booted(): void

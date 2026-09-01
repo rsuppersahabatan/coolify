@@ -2,7 +2,7 @@
 # https://hub.docker.com/r/serversideup/php/tags?name=8.4-fpm-nginx-alpine
 ARG SERVERSIDEUP_PHP_VERSION=8.4-fpm-nginx-alpine
 # https://github.com/minio/mc/releases
-ARG MINIO_VERSION=RELEASE.2025-05-21T01-59-54Z
+ARG MINIO_VERSION=RELEASE.2025-08-13T08-35-41Z
 # https://github.com/cloudflare/cloudflared/releases
 ARG CLOUDFLARED_VERSION=2025.7.0
 # https://www.postgresql.org/support/versioning/
@@ -24,6 +24,7 @@ FROM serversideup/php:${SERVERSIDEUP_PHP_VERSION}
 ARG USER_ID
 ARG GROUP_ID
 ARG TARGETPLATFORM
+ARG TARGETARCH
 ARG POSTGRES_VERSION
 ARG CLOUDFLARED_VERSION
 ARG NGINX_VERSION
@@ -58,6 +59,7 @@ RUN apk upgrade --no-cache && \
 RUN apk add --no-cache \
     postgresql${POSTGRES_VERSION}-client \
     openssh-client \
+    openssl \
     git \
     git-lfs \
     jq \

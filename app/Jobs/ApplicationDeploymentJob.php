@@ -52,6 +52,8 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
 
     private const RAILPACK_GENERATED_CONFIG_PATH = '.coolify/railpack.generated.json';
 
+    private const CONTAINER_REMOVE_TIMEOUT_MARKER = '__COOLIFY_CONTAINER_REMOVE_TIMEOUT__';
+
     private const DOCKER_CLIENT_ENV_KEYS = [
         'BUILDKIT_HOST',
         'BUILDX_BUILDER',
@@ -259,14 +261,7 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
         $this->configuration_dir = application_configuration_dir()."/{$this->application->uuid}";
         $this->is_debug_enabled = $this->application->settings->is_debug_enabled;
 
-        $this->container_name = generateApplicationContainerName($this->application, $this->pull_request_id);
-        if ($this->application->settings->custom_internal_name && ! $this->application->settings->is_consistent_container_name_enabled) {
-            if ($this->pull_request_id === 0) {
-                $this->container_name = $this->application->settings->custom_internal_name;
-            } else {
-                $this->container_name = addPreviewDeploymentSuffix($this->application->settings->custom_internal_name, $this->pull_request_id);
-            }
-        }
+        $this->container_name = $this->resolveContainerName();
 
         $this->saved_outputs = collect();
 
@@ -431,6 +426,7 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
                 ["docker version --format '{{.Server.Version}}'"],
                 $serverToCheck
             );
+            $serverToCheck->rememberDockerVersion($dockerVersion);
 
             $versionParts = explode('.', $dockerVersion);
             $majorVersion = (int) $versionParts[0];
@@ -609,6 +605,10 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
     {
         if ($this->pull_request_id !== 0 && str($this->dockerImagePreviewTag)->isNotEmpty()) {
             return $this->dockerImagePreviewTag;
+        }
+
+        if ($this->rollback && str($this->commit)->isNotEmpty()) {
+            return $this->commit;
         }
 
         if (str($this->application->docker_registry_image_tag)->isNotEmpty()) {
@@ -1343,19 +1343,21 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
         if ($this->pull_request_id === 0) {
             // Generate SERVICE_ variables first for dockercompose
             if ($this->build_pack === 'dockercompose') {
-                $domains = collect(json_decode($this->application->docker_compose_domains)) ?? collect([]);
+                $domains = collect(json_decode($this->application->docker_compose_domains ?: '[]', true) ?: []);
 
                 // Generate SERVICE_FQDN & SERVICE_URL for dockercompose
+                // Env keys always use underscore-normalized names so hyphen/dot storage keys stay valid.
                 foreach ($domains as $forServiceName => $domain) {
-                    $parsedDomain = data_get($domain, 'domain');
+                    $parsedDomain = composeDomainEntryString($domain);
                     if (filled($parsedDomain)) {
                         $parsedDomain = str($parsedDomain)->explode(',')->first();
                         $coolifyUrl = Url::fromString($parsedDomain);
                         $coolifyScheme = $coolifyUrl->getScheme();
                         $coolifyFqdn = $coolifyUrl->getHost();
                         $coolifyUrl = $coolifyUrl->withScheme($coolifyScheme)->withHost($coolifyFqdn)->withPort(null);
-                        $envs->push('SERVICE_URL_'.str($forServiceName)->upper().'='.$coolifyUrl->__toString());
-                        $envs->push('SERVICE_FQDN_'.str($forServiceName)->upper().'='.$coolifyFqdn);
+                        $serviceEnvKey = str(normalizeComposeServiceName((string) $forServiceName))->upper();
+                        $envs->push('SERVICE_URL_'.$serviceEnvKey.'='.$coolifyUrl->__toString());
+                        $envs->push('SERVICE_FQDN_'.$serviceEnvKey.'='.$coolifyFqdn);
                     }
                 }
 
@@ -1413,19 +1415,20 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
         } else {
             // Generate SERVICE_ variables first for dockercompose preview
             if ($this->build_pack === 'dockercompose') {
-                $domains = collect(json_decode(data_get($this->preview, 'docker_compose_domains'))) ?? collect([]);
+                $domains = collect(json_decode(data_get($this->preview, 'docker_compose_domains') ?: '[]', true) ?: []);
 
                 // Generate SERVICE_FQDN & SERVICE_URL for dockercompose
                 foreach ($domains as $forServiceName => $domain) {
-                    $parsedDomain = data_get($domain, 'domain');
+                    $parsedDomain = composeDomainEntryString($domain);
                     if (filled($parsedDomain)) {
                         $parsedDomain = str($parsedDomain)->explode(',')->first();
                         $coolifyUrl = Url::fromString($parsedDomain);
                         $coolifyScheme = $coolifyUrl->getScheme();
                         $coolifyFqdn = $coolifyUrl->getHost();
                         $coolifyUrl = $coolifyUrl->withScheme($coolifyScheme)->withHost($coolifyFqdn)->withPort(null);
-                        $envs->push('SERVICE_URL_'.str($forServiceName)->replace('-', '_')->replace('.', '_')->upper().'='.$coolifyUrl->__toString());
-                        $envs->push('SERVICE_FQDN_'.str($forServiceName)->replace('-', '_')->replace('.', '_')->upper().'='.$coolifyFqdn);
+                        $serviceEnvKey = str(normalizeComposeServiceName((string) $forServiceName))->upper();
+                        $envs->push('SERVICE_URL_'.$serviceEnvKey.'='.$coolifyUrl->__toString());
+                        $envs->push('SERVICE_FQDN_'.$serviceEnvKey.'='.$coolifyFqdn);
                     }
                 }
 
@@ -1664,17 +1667,18 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
                 }
 
                 // Generate SERVICE_FQDN & SERVICE_URL for non-PR deployments
-                $domains = collect(json_decode($this->application->docker_compose_domains)) ?? collect([]);
+                $domains = collect(json_decode($this->application->docker_compose_domains ?: '[]', true) ?: []);
                 foreach ($domains as $forServiceName => $domain) {
-                    $parsedDomain = data_get($domain, 'domain');
+                    $parsedDomain = composeDomainEntryString($domain);
                     if (filled($parsedDomain)) {
                         $parsedDomain = str($parsedDomain)->explode(',')->first();
                         $coolifyUrl = Url::fromString($parsedDomain);
                         $coolifyScheme = $coolifyUrl->getScheme();
                         $coolifyFqdn = $coolifyUrl->getHost();
                         $coolifyUrl = $coolifyUrl->withScheme($coolifyScheme)->withHost($coolifyFqdn)->withPort(null);
-                        $envs_dict['SERVICE_URL_'.str($forServiceName)->replace('-', '_')->replace('.', '_')->upper()] = escapeBashEnvValue($coolifyUrl->__toString());
-                        $envs_dict['SERVICE_FQDN_'.str($forServiceName)->replace('-', '_')->replace('.', '_')->upper()] = escapeBashEnvValue($coolifyFqdn);
+                        $serviceEnvKey = str(normalizeComposeServiceName((string) $forServiceName))->upper();
+                        $envs_dict['SERVICE_URL_'.$serviceEnvKey] = escapeBashEnvValue($coolifyUrl->__toString());
+                        $envs_dict['SERVICE_FQDN_'.$serviceEnvKey] = escapeBashEnvValue($coolifyFqdn);
                     }
                 }
             } else {
@@ -1686,17 +1690,18 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
                 }
 
                 // Generate SERVICE_FQDN & SERVICE_URL for preview deployments with PR-specific domains
-                $domains = collect(json_decode(data_get($this->preview, 'docker_compose_domains'))) ?? collect([]);
+                $domains = collect(json_decode(data_get($this->preview, 'docker_compose_domains') ?: '[]', true) ?: []);
                 foreach ($domains as $forServiceName => $domain) {
-                    $parsedDomain = data_get($domain, 'domain');
+                    $parsedDomain = composeDomainEntryString($domain);
                     if (filled($parsedDomain)) {
                         $parsedDomain = str($parsedDomain)->explode(',')->first();
                         $coolifyUrl = Url::fromString($parsedDomain);
                         $coolifyScheme = $coolifyUrl->getScheme();
                         $coolifyFqdn = $coolifyUrl->getHost();
                         $coolifyUrl = $coolifyUrl->withScheme($coolifyScheme)->withHost($coolifyFqdn)->withPort(null);
-                        $envs_dict['SERVICE_URL_'.str($forServiceName)->replace('-', '_')->replace('.', '_')->upper()] = escapeBashEnvValue($coolifyUrl->__toString());
-                        $envs_dict['SERVICE_FQDN_'.str($forServiceName)->replace('-', '_')->replace('.', '_')->upper()] = escapeBashEnvValue($coolifyFqdn);
+                        $serviceEnvKey = str(normalizeComposeServiceName((string) $forServiceName))->upper();
+                        $envs_dict['SERVICE_URL_'.$serviceEnvKey] = escapeBashEnvValue($coolifyUrl->__toString());
+                        $envs_dict['SERVICE_FQDN_'.$serviceEnvKey] = escapeBashEnvValue($coolifyFqdn);
                     }
                 }
             }
@@ -1974,6 +1979,19 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
         }
     }
 
+    private function resolveContainerName(): string
+    {
+        if (str($this->application->settings->custom_internal_name)->isEmpty()) {
+            return generateApplicationContainerName($this->application, $this->pull_request_id);
+        }
+
+        if ($this->pull_request_id === 0) {
+            return $this->application->settings->custom_internal_name;
+        }
+
+        return addPreviewDeploymentSuffix($this->application->settings->custom_internal_name, $this->pull_request_id);
+    }
+
     private function health_check()
     {
         try {
@@ -2155,7 +2173,9 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
         $this->dockerConfigFileExists = instant_remote_process(["test -f {$this->serverUserHomeDir}/.docker/config.json && echo 'OK' || echo 'NOK'"], $this->server);
 
         $env_flags = $this->generate_docker_env_flags_for_secrets();
-        $buildxMetadataVolume = "-v {$this->serverUserHomeDir}/.docker/buildx:/root/.docker/buildx";
+        $buildxMetadataVolume = isDev() && $this->server->isLocalhost()
+            ? '-v coolify-buildx:/root/.docker/buildx'
+            : "-v {$this->serverUserHomeDir}/.docker/buildx:/root/.docker/buildx";
         if ($this->use_build_server) {
             if ($this->dockerConfigFileExists === 'NOK') {
                 throw new DeploymentException('Docker config file (~/.docker/config.json) not found on the build server. Please run "docker login" to login to the docker registry on the server.');
@@ -2260,9 +2280,9 @@ class ApplicationDeploymentJob implements ShouldBeEncrypted, ShouldQueue
             $fqdn = $this->preview->fqdn;
         }
         if (isset($fqdn)) {
-            $url = Url::fromString($fqdn);
-            $fqdn = $url->getHost();
-            $url = $url->withHost($fqdn)->withPort(null)->__toString();
+            $domains = str($fqdn)->explode(',')->map(fn (string $domain) => trim($domain))->filter();
+            $url = $domains->map(fn (string $domain) => Url::fromString($domain)->withPort(null)->__toString())->implode(',');
+            $fqdn = $domains->map(fn (string $domain) => Url::fromString($domain)->getHost())->implode(',');
             if ((int) $this->application->compose_parsing_version >= 3) {
                 $this->coolify_variables .= 'COOLIFY_URL='.escapeShellValue($url).' ';
                 $this->coolify_variables .= 'COOLIFY_FQDN='.escapeShellValue($fqdn).' ';
@@ -3287,6 +3307,10 @@ COPY ./nginx.conf /etc/nginx/conf.d/default.conf");
         // Always use .env file
         $docker_compose['services'][$this->container_name]['env_file'] = ['.env'];
 
+        if ($this->application->settings->stop_grace_period !== null) {
+            $docker_compose['services'][$this->container_name]['stop_grace_period'] = $this->application->settings->stopGracePeriodSeconds().'s';
+        }
+
         // Only add Coolify healthcheck if no custom HEALTHCHECK found in Dockerfile
         // If custom_healthcheck_found is true, the Dockerfile's HEALTHCHECK will be used
         // If healthcheck is disabled, no healthcheck will be added
@@ -3409,24 +3433,22 @@ COPY ./nginx.conf /etc/nginx/conf.d/default.conf");
         if ($this->pull_request_id === 0) {
             $custom_compose = convertDockerRunToCompose($this->application->custom_docker_run_options);
             if ((bool) $this->application->settings->is_consistent_container_name_enabled) {
-                if (! $this->application->settings->custom_internal_name) {
-                    $docker_compose['services'][$this->application->uuid] = $docker_compose['services'][$this->container_name];
-                    if (count($custom_compose) > 0) {
-                        $ipv4 = data_get($custom_compose, 'ip.0');
-                        $ipv6 = data_get($custom_compose, 'ip6.0');
-                        data_forget($custom_compose, 'ip');
-                        data_forget($custom_compose, 'ip6');
-                        if ($ipv4 || $ipv6) {
-                            data_forget($docker_compose['services'][$this->application->uuid], 'networks');
-                        }
-                        if ($ipv4) {
-                            $docker_compose['services'][$this->application->uuid]['networks'][$this->destination->network]['ipv4_address'] = $ipv4;
-                        }
-                        if ($ipv6) {
-                            $docker_compose['services'][$this->application->uuid]['networks'][$this->destination->network]['ipv6_address'] = $ipv6;
-                        }
-                        $docker_compose['services'][$this->application->uuid] = array_merge_recursive($docker_compose['services'][$this->application->uuid], $custom_compose);
+                $docker_compose['services'][$this->application->uuid] = $docker_compose['services'][$this->container_name];
+                if ($this->container_name !== $this->application->uuid) {
+                    unset($docker_compose['services'][$this->container_name]);
+                }
+                if (count($custom_compose) > 0) {
+                    $ipv4 = data_get($custom_compose, 'ip.0');
+                    $ipv6 = data_get($custom_compose, 'ip6.0');
+                    data_forget($custom_compose, 'ip');
+                    data_forget($custom_compose, 'ip6');
+                    if ($ipv4) {
+                        $docker_compose['services'][$this->application->uuid]['networks'][$this->destination->network]['ipv4_address'] = $ipv4;
                     }
+                    if ($ipv6) {
+                        $docker_compose['services'][$this->application->uuid]['networks'][$this->destination->network]['ipv6_address'] = $ipv6;
+                    }
+                    $docker_compose['services'][$this->application->uuid] = array_merge_recursive($docker_compose['services'][$this->application->uuid], $custom_compose);
                 }
             } else {
                 if (count($custom_compose) > 0) {
@@ -3965,17 +3987,47 @@ COPY ./nginx.conf /etc/nginx/conf.d/default.conf");
 
             if ($skipRemove) {
                 $this->execute_remote_command(
-                    ["docker stop --time=$timeout $containerName", 'hidden' => true, 'ignore_errors' => true]
+                    [dockerStopCommand($timeout, $containerName, $this->server), 'hidden' => true, 'ignore_errors' => true]
                 );
             } else {
                 $this->execute_remote_command(
-                    ["docker stop --time=$timeout $containerName", 'hidden' => true, 'ignore_errors' => true],
-                    ["docker rm -f $containerName", 'hidden' => true, 'ignore_errors' => true]
+                    [dockerStopCommand($timeout, $containerName, $this->server), 'hidden' => true, 'ignore_errors' => true]
                 );
+                $this->removeContainerWithTimeout($containerName);
             }
         } catch (Exception $error) {
             $this->application_deployment_queue->addLogEntry("Error stopping container $containerName: ".$error->getMessage(), 'stderr');
         }
+    }
+
+    private function removeContainerWithTimeout(string $containerName): void
+    {
+        $outputKey = 'container_remove_'.md5($containerName);
+
+        $this->execute_remote_command([
+            dockerRemoveCommandWithTimeout($containerName),
+            'hidden' => true,
+            'ignore_errors' => true,
+            'save' => $outputKey,
+            'append' => false,
+        ]);
+
+        if (! isset($this->saved_outputs)) {
+            return;
+        }
+
+        $output = (string) $this->saved_outputs->get($outputKey, '');
+        if (! str_contains($output, self::CONTAINER_REMOVE_TIMEOUT_MARKER)) {
+            return;
+        }
+
+        $this->application_deployment_queue->addLogEntry(
+            "Warning: Removing container {$containerName} timed out after 60 seconds. The deployment will continue and cleanup will be retried in 5 minutes.",
+            'stderr'
+        );
+
+        RemoveContainerJob::dispatch($this->server->id, $containerName)
+            ->delay(now()->addMinutes(5));
     }
 
     private function stop_running_container(bool $force = false)
@@ -3984,7 +4036,10 @@ COPY ./nginx.conf /etc/nginx/conf.d/default.conf");
             $this->application_deployment_queue->addLogEntry('Removing old containers.');
             if ($this->newVersionIsHealthy || $force) {
                 if ($this->application->settings->is_consistent_container_name_enabled || str($this->application->settings->custom_internal_name)->isNotEmpty()) {
-                    $this->graceful_shutdown_container($this->container_name);
+                    $containers = getCurrentApplicationContainerStatus($this->server, $this->application->id, $this->pull_request_id);
+                    $this->containerNamesToRemove($containers)->each(function (string $containerName) {
+                        $this->graceful_shutdown_container($containerName);
+                    });
                 } else {
                     $containers = getCurrentApplicationContainerStatus($this->server, $this->application->id, $this->pull_request_id);
                     if ($this->pull_request_id === 0) {
@@ -4021,6 +4076,16 @@ COPY ./nginx.conf /etc/nginx/conf.d/default.conf");
             // Only re-throw if deployment hasn't succeeded yet
             throw new DeploymentException("Failed to stop running container: {$e->getMessage()}", $e->getCode(), $e);
         }
+    }
+
+    private function containerNamesToRemove(Collection $containers): Collection
+    {
+        return $containers
+            ->pluck('Names')
+            ->push($this->container_name)
+            ->filter()
+            ->unique()
+            ->values();
     }
 
     private function start_by_compose_file()
@@ -4907,11 +4972,21 @@ COPY ./nginx.conf /etc/nginx/conf.d/default.conf");
         // Reset restart count after successful deployment
         // This is done here (not in Livewire) to avoid race conditions
         // with GetContainersStatus reading old container restart counts
-        $this->application->update([
+        $restartState = [
             'restart_count' => 0,
             'last_restart_at' => null,
             'last_restart_type' => null,
-        ]);
+        ];
+
+        if ($this->pull_request_id === 0) {
+            $restartState['restart_limit_reached'] = false;
+        }
+
+        if ($this->pull_request_id === 0) {
+            $this->application->update($restartState);
+        } else {
+            $this->preview?->resetRestartLimit();
+        }
 
         try {
             $this->application->markDeploymentConfigurationApplied($this->application_deployment_queue);
@@ -5008,9 +5083,7 @@ COPY ./nginx.conf /etc/nginx/conf.d/default.conf");
                     // do not remove already running container for PR deployments
                 } else {
                     $this->application_deployment_queue->addLogEntry('Deployment failed. Removing the new version of your application.', 'stderr');
-                    $this->execute_remote_command(
-                        ["docker rm -f $this->container_name >/dev/null 2>&1", 'hidden' => true, 'ignore_errors' => true]
-                    );
+                    $this->removeContainerWithTimeout($this->container_name);
                 }
             }
         }

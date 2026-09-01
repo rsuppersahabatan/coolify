@@ -50,6 +50,10 @@ class Team extends Model implements SendsDiscord, SendsEmail, SendsPushover, Sen
         'is_mcp_server_enabled',
     ];
 
+    protected $attributes = [
+        'is_mcp_server_enabled' => true,
+    ];
+
     protected $casts = [
         'personal_team' => 'boolean',
         'is_mcp_server_enabled' => 'boolean',
@@ -87,7 +91,7 @@ class Team extends Model implements SendsDiscord, SendsEmail, SendsPushover, Sen
 
             // Delete non-instance-wide sources owned by this team
             $teamSources = GithubApp::where('team_id', $team->id)->get()
-                ->merge(GitlabApp::where('team_id', $team->id)->get());
+                ->concat(GitlabApp::where('team_id', $team->id)->get());
             foreach ($teamSources as $source) {
                 $source->delete();
             }
@@ -271,13 +275,22 @@ class Team extends Model implements SendsDiscord, SendsEmail, SendsPushover, Sen
         return $this->hasMany(TeamInvitation::class);
     }
 
-    public function isEmpty()
+    /**
+     * @return array<string, int>
+     */
+    public function deletionBlockers(): array
     {
-        if ($this->projects()->count() === 0 && $this->servers()->count() === 0 && $this->privateKeys()->count() === 0 && $this->sources()->count() === 0) {
-            return true;
-        }
+        return array_filter([
+            'projects' => $this->projects()->count(),
+            'servers' => $this->servers()->count(),
+            'sources' => GithubApp::query()->where('team_id', $this->id)->where('is_system_wide', false)->count()
+                + GitlabApp::query()->where('team_id', $this->id)->where('is_system_wide', false)->count(),
+        ]);
+    }
 
-        return false;
+    public function isEmpty(): bool
+    {
+        return $this->deletionBlockers() === [];
     }
 
     public function projects()

@@ -7,6 +7,7 @@ use App\Models\ScheduledDatabaseBackup;
 use App\Models\ScheduledVolumeBackup;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 class Show extends Component
@@ -42,10 +43,16 @@ class Show extends Component
 
             $this->storage->delete();
 
-            return redirect()->route('storage.index');
+            return redirectRoute($this, 'storage.index');
         } catch (\Throwable $e) {
             return handleError($e, $this);
         }
+    }
+
+    #[On('storage-status-changed')]
+    public function refreshStorageStatus(bool $isUsable): void
+    {
+        $this->storage->refresh();
     }
 
     public function render()

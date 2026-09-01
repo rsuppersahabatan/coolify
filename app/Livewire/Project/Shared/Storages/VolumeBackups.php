@@ -8,6 +8,7 @@ use App\Models\LocalFileVolume;
 use App\Models\LocalPersistentVolume;
 use App\Models\S3Storage;
 use App\Models\ScheduledVolumeBackup;
+use App\Models\Service;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Routing\Redirector;
@@ -55,7 +56,16 @@ class VolumeBackups extends Component
 
     public string $timezone = '';
 
-    public int $timeout = 3600;
+    public int $timeout = ScheduledVolumeBackup::DEFAULT_TIMEOUT;
+
+    public int $perPage = 10;
+
+    public function updatedPerPage(): void
+    {
+        $this->perPage = max(1, min(100, $this->perPage));
+
+        $this->resetPage();
+    }
 
     public bool $delete_backup_s3 = false;
 
@@ -196,12 +206,7 @@ class VolumeBackups extends Component
         VolumeBackupJob::dispatch($this->backup);
         $this->dispatch('success', 'Storage backup queued.');
 
-        return redirect()->route('project.application.backup.executions', [
-            'project_uuid' => $this->resource->project()->uuid,
-            'environment_uuid' => $this->resource->environment->uuid,
-            'application_uuid' => $this->resource->uuid,
-            'backup_uuid' => $this->backup->uuid,
-        ]);
+        return redirect()->route($this->routeName('executions'), $this->routeParameters());
     }
 
     public function delete(?string $password = null, array $selectedActions = []): bool|string
@@ -220,11 +225,7 @@ class VolumeBackups extends Component
             DeleteScheduledVolumeBackup::run($this->backup);
             $this->backup = null;
             $this->dispatch('success', 'Storage backup schedule and archives deleted.');
-            $this->redirectRoute('project.application.backup.index', [
-                'project_uuid' => $this->resource->project()->uuid,
-                'environment_uuid' => $this->resource->environment->uuid,
-                'application_uuid' => $this->resource->uuid,
-            ], navigate: true);
+            $this->redirectRoute($this->routeName('index'), $this->routeParameters(includeBackup: false), navigate: true);
 
             return true;
         } catch (Throwable $exception) {
@@ -324,7 +325,7 @@ class VolumeBackups extends Component
 
     public function render()
     {
-        $executions = $this->backup?->executions()->paginate(10);
+        $executions = $this->backup?->executions()->paginate($this->perPage);
 
         return view('livewire.project.shared.storages.volume-backups', [
             'executions' => $executions ?? collect(),
@@ -384,5 +385,26 @@ class VolumeBackups extends Component
                 ->where('team_id', currentTeam()->id)
                 ->where('is_usable', true)
                 ->exists();
+    }
+
+    private function routeName(string $section): string
+    {
+        return $this->resource instanceof Service
+            ? "project.service.volume-backups.{$section}"
+            : "project.application.backup.{$section}";
+    }
+
+    private function routeParameters(bool $includeBackup = true): array
+    {
+        $parameters = [
+            'project_uuid' => $this->resource->project()->uuid,
+            'environment_uuid' => $this->resource->environment->uuid,
+        ];
+        $parameters[$this->resource instanceof Service ? 'service_uuid' : 'application_uuid'] = $this->resource->uuid;
+        if ($includeBackup) {
+            $parameters['backup_uuid'] = $this->backup?->uuid;
+        }
+
+        return $parameters;
     }
 }

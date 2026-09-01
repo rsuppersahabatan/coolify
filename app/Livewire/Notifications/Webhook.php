@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Notifications;
 
+use App\Livewire\Notifications\Concerns\TogglesNotificationEvents;
 use App\Models\Team;
 use App\Models\WebhookNotificationSettings;
 use App\Notifications\Test;
@@ -12,7 +13,7 @@ use Livewire\Component;
 
 class Webhook extends Component
 {
-    use AuthorizesRequests;
+    use AuthorizesRequests, TogglesNotificationEvents;
 
     public Team $team;
 
@@ -32,6 +33,9 @@ class Webhook extends Component
 
     #[Validate(['boolean'])]
     public bool $statusChangeWebhookNotifications = false;
+
+    #[Validate(['boolean'])]
+    public bool $restartLimitReachedWebhookNotifications = true;
 
     #[Validate(['boolean'])]
     public bool $backupSuccessWebhookNotifications = false;
@@ -89,6 +93,7 @@ class Webhook extends Component
             $this->settings->deployment_success_webhook_notifications = $this->deploymentSuccessWebhookNotifications;
             $this->settings->deployment_failure_webhook_notifications = $this->deploymentFailureWebhookNotifications;
             $this->settings->status_change_webhook_notifications = $this->statusChangeWebhookNotifications;
+            $this->settings->restart_limit_reached_webhook_notifications = $this->restartLimitReachedWebhookNotifications;
             $this->settings->backup_success_webhook_notifications = $this->backupSuccessWebhookNotifications;
             $this->settings->backup_failure_webhook_notifications = $this->backupFailureWebhookNotifications;
             $this->settings->scheduled_task_success_webhook_notifications = $this->scheduledTaskSuccessWebhookNotifications;
@@ -112,6 +117,7 @@ class Webhook extends Component
             $this->deploymentSuccessWebhookNotifications = $this->settings->deployment_success_webhook_notifications;
             $this->deploymentFailureWebhookNotifications = $this->settings->deployment_failure_webhook_notifications;
             $this->statusChangeWebhookNotifications = $this->settings->status_change_webhook_notifications;
+            $this->restartLimitReachedWebhookNotifications = $this->settings->restart_limit_reached_webhook_notifications;
             $this->backupSuccessWebhookNotifications = $this->settings->backup_success_webhook_notifications;
             $this->backupFailureWebhookNotifications = $this->settings->backup_failure_webhook_notifications;
             $this->scheduledTaskSuccessWebhookNotifications = $this->settings->scheduled_task_success_webhook_notifications;

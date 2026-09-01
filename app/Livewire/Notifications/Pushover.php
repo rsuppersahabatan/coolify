@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Notifications;
 
+use App\Livewire\Notifications\Concerns\TogglesNotificationEvents;
 use App\Models\PushoverNotificationSettings;
 use App\Models\Team;
 use App\Notifications\Test;
@@ -12,7 +13,7 @@ use Livewire\Component;
 
 class Pushover extends Component
 {
-    use AuthorizesRequests;
+    use AuthorizesRequests, TogglesNotificationEvents;
 
     protected $listeners = ['refresh' => '$refresh'];
 
@@ -39,6 +40,9 @@ class Pushover extends Component
 
     #[Validate(['boolean'])]
     public bool $statusChangePushoverNotifications = false;
+
+    #[Validate(['boolean'])]
+    public bool $restartLimitReachedPushoverNotifications = true;
 
     #[Validate(['boolean'])]
     public bool $backupSuccessPushoverNotifications = false;
@@ -97,6 +101,7 @@ class Pushover extends Component
             $this->settings->deployment_success_pushover_notifications = $this->deploymentSuccessPushoverNotifications;
             $this->settings->deployment_failure_pushover_notifications = $this->deploymentFailurePushoverNotifications;
             $this->settings->status_change_pushover_notifications = $this->statusChangePushoverNotifications;
+            $this->settings->restart_limit_reached_pushover_notifications = $this->restartLimitReachedPushoverNotifications;
             $this->settings->backup_success_pushover_notifications = $this->backupSuccessPushoverNotifications;
             $this->settings->backup_failure_pushover_notifications = $this->backupFailurePushoverNotifications;
             $this->settings->scheduled_task_success_pushover_notifications = $this->scheduledTaskSuccessPushoverNotifications;
@@ -124,6 +129,7 @@ class Pushover extends Component
             $this->deploymentSuccessPushoverNotifications = $this->settings->deployment_success_pushover_notifications;
             $this->deploymentFailurePushoverNotifications = $this->settings->deployment_failure_pushover_notifications;
             $this->statusChangePushoverNotifications = $this->settings->status_change_pushover_notifications;
+            $this->restartLimitReachedPushoverNotifications = $this->settings->restart_limit_reached_pushover_notifications;
             $this->backupSuccessPushoverNotifications = $this->settings->backup_success_pushover_notifications;
             $this->backupFailurePushoverNotifications = $this->settings->backup_failure_pushover_notifications;
             $this->scheduledTaskSuccessPushoverNotifications = $this->settings->scheduled_task_success_pushover_notifications;
